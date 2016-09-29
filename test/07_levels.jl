@@ -2,6 +2,7 @@ module TestLevels
     using Base.Test
     using CategoricalArrays
     using CategoricalArrays: DefaultRefType
+    using Compat
 
     pool = CategoricalPool([2, 1, 3])
 
@@ -196,4 +197,22 @@ module TestLevels
         @test_throws KeyError get(pool, 6)
         @test pool.valindex == [CategoricalValue(i, pool) for i in 1:4]
     end
+
+
+    # Test that overflow of reftype is detected and doesn't corrupt levels
+    res = @test_throws LevelsException{Int, UInt8} CategoricalPool{Int, UInt8}(collect(256:-1:1))
+    VERSION >= v"0.5.0-dev" && @test res.value.levels == [1]
+    @test sprint(showerror, res.value) == "cannot store level(s) 1 since reference type UInt8 can only hold 255 levels. Convert categorical array to a larger reference type to add more levels."
+
+    pool = CategoricalPool(collect(30:288))
+    res = @test_throws LevelsException{Int, UInt8} convert(CategoricalPool{Int, UInt8}, pool)
+    VERSION >= v"0.5.0-dev" && @test res.value.levels == collect(285:288)
+    @test sprint(showerror, res.value) == "cannot store level(s) 285, 286, 287 and 288 since reference type UInt8 can only hold 255 levels. Convert categorical array to a larger reference type to add more levels."
+
+    pool = CategoricalPool{String, UInt8}(@compat string.(318:-1:65))
+    res = @test_throws LevelsException{String, UInt8} levels!(pool, vcat("az", levels(pool), "bz", "cz"))
+    VERSION >= v"0.5.0-dev" && @test res.value.levels == ["bz", "cz"]
+    @test sprint(showerror, res.value) == "cannot store level(s) \"bz\" and \"cz\" since reference type UInt8 can only hold 255 levels. Convert categorical array to a larger reference type to add more levels."
+    lev = copy(levels(pool))
+    @test levels!(pool, vcat(lev, "az")) == vcat(lev, "az")
 end
